@@ -2,6 +2,9 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowUpRight,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
   Check,
   ChevronRight,
   CircleCheck,
@@ -39,6 +42,7 @@ import {
   AlertDialogFooter,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
+import { compareProjects, type SortKey } from "./lib/project-sort";
 import { readPreference, savePreference } from "./i18n";
 import { progress, statuses, type Project, type ProjectInput, type Task, type User } from "./types";
 import { UsersPage } from "./components/UsersPage";
@@ -75,7 +79,8 @@ export default function App() {
   const [page, setPage] = useState("overview"),
     [query, setQuery] = useState(""),
     [filter, setFilter] = useState("all"),
-    [sort, setSort] = useState("newest"),
+    [sort, setSort] = useState<SortKey>("newest"),
+    [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc"),
     [view, setView] = useState("grid"),
     [menu, setMenu] = useState(false);
   const [theme, setTheme] = useState(() => readPreference("theme", "system"));
@@ -159,13 +164,11 @@ export default function App() {
           .toLocaleLowerCase()
           .includes(query.toLocaleLowerCase()),
     )
-    .sort((a, b) =>
-      sort === "alphabetical"
-        ? a.name.localeCompare(b.name, i18n.language)
-        : sort === "dueSoon"
-          ? (a.due || "9999").localeCompare(b.due || "9999")
-          : b.id - a.id,
-    );
+    .sort((a, b) => compareProjects(a, b, sort, sortDirection, i18n.language));
+  function sortColumn(key: SortKey) {
+    setSortDirection(sort === key && sortDirection === "asc" ? "desc" : "asc");
+    setSort(key);
+  }
   const date = (value: string) =>
     value
       ? new Intl.DateTimeFormat(i18n.language, {
@@ -301,18 +304,6 @@ export default function App() {
             );
           })}
         </nav>
-        <div className="sidebar-note">
-          <div className="note-art">
-            <Sprout size={34} />
-            <span>✦</span>
-          </div>
-          <strong>{t("focus")}</strong>
-          <p>{t("focusText")}</p>
-          <button onClick={() => go("projects")}>
-            {t("viewProjects")}
-            <ArrowUpRight size={15} />
-          </button>
-        </div>
         <button
           className={page === "settings" ? "nav-item selected" : "nav-item"}
           onClick={() => go("settings")}
@@ -463,12 +454,14 @@ export default function App() {
                     },
                   ].map(({ label, value, icon: Icon, foot }) => (
                     <section className={"stat " + label} key={label}>
-                      <div>
+                      <span className="stat-icon">
+                        <Icon size={22} />
+                      </span>
+                      <div className="stat-copy">
                         <span>{t(label)}</span>
-                        <Icon size={18} />
+                        <strong>{value}</strong>
+                        <small>{foot}</small>
                       </div>
-                      <strong>{value}</strong>
-                      <small>{foot}</small>
                     </section>
                   ))}
                 </div>
@@ -542,9 +535,20 @@ export default function App() {
                       <select
                         aria-label={t("sort")}
                         value={sort}
-                        onChange={(e) => setSort(e.target.value)}
+                        onChange={(e) => {
+                          setSort(e.target.value as SortKey);
+                          setSortDirection("asc");
+                        }}
                       >
-                        {["newest", "dueSoon", "alphabetical"].map((k) => (
+                        {[
+                          "newest",
+                          "dueSoon",
+                          "alphabetical",
+                          "status",
+                          "owner",
+                          "priority",
+                          "progress",
+                        ].map((k) => (
                           <option key={k} value={k}>
                             {t(k)}
                           </option>
@@ -552,80 +556,172 @@ export default function App() {
                       </select>
                     </div>
                   </div>
-                  <div className={"project-grid " + (view === "list" ? "list-view" : "")}>
-                    {filtered.map((p) => (
-                      <button
-                        className="project-card"
-                        key={p.id}
-                        onClick={() => {
-                          setSelected(p.id);
-                          setTaskTitle("");
-                        }}
-                      >
-                        <div className="card-top">
-                          <span
-                            className="project-icon"
-                            style={{
-                              color: p.color,
-                              background: p.color + "18",
-                            }}
-                          >
-                            <FolderKanban size={23} />
-                          </span>
-                          <span className={"status " + p.status}>
-                            <i />
-                            {t(p.status)}
-                          </span>
-                          <ArrowUpRight className="card-arrow" size={17} />
-                        </div>
-                        <h3>{p.name}</h3>
-                        <p className="description">{p.description || "—"}</p>
-                        <div className="progress-heading">
-                          <span>{t("progress")}</span>
-                          <strong>{progress(p)}%</strong>
-                        </div>
-                        <div className="progress-track">
-                          <span
-                            style={{
-                              width: progress(p) + "%",
-                              background: p.color,
-                            }}
-                          />
-                        </div>
-                        <div className="card-task-count">
-                          <ListTodo size={13} />
-                          {t("taskCount", {
-                            done: p.tasks.filter((task) => task.done).length,
-                            total: p.tasks.length,
-                          })}
-                        </div>
-                        <div className="card-footer">
-                          <span className="owner">
+                  {view === "list" ? (
+                    <section className="project-table-scroll" aria-label={t("projects")}>
+                      <table className="project-table">
+                        <thead>
+                          <tr>
+                            {(
+                              [
+                                ["alphabetical", "name"],
+                                ["status", "status"],
+                                ["owner", "owner"],
+                                ["dueSoon", "due"],
+                                ["priority", "priority"],
+                                ["progress", "progress"],
+                              ] as const
+                            ).map(([key, label]) => (
+                              <th
+                                key={key}
+                                scope="col"
+                                aria-sort={
+                                  sort === key
+                                    ? sortDirection === "asc"
+                                      ? "ascending"
+                                      : "descending"
+                                    : "none"
+                                }
+                              >
+                                <button onClick={() => sortColumn(key)}>
+                                  {t(label)}
+                                  {sort === key ? (
+                                    sortDirection === "asc" ? (
+                                      <ArrowUp size={14} />
+                                    ) : (
+                                      <ArrowDown size={14} />
+                                    )
+                                  ) : (
+                                    <ArrowUpDown size={14} />
+                                  )}
+                                </button>
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filtered.map((p) => (
+                            <tr key={p.id}>
+                              <td aria-label={p.name}>
+                                <button
+                                  className="table-project"
+                                  onClick={() => {
+                                    setSelected(p.id);
+                                    setTaskTitle("");
+                                  }}
+                                >
+                                  <span
+                                    className="project-icon"
+                                    style={{ color: p.color, background: p.color + "18" }}
+                                  >
+                                    <FolderKanban size={21} />
+                                  </span>
+                                  <span>
+                                    <strong>{p.name}</strong>
+                                    <small>{p.description}</small>
+                                  </span>
+                                </button>
+                              </td>
+                              <td>
+                                <span className={"status " + p.status}>{t(p.status)}</span>
+                              </td>
+                              <td className="table-owner">{p.owner || t("unassigned")}</td>
+                              <td className="table-date">{date(p.due)}</td>
+                              <td>
+                                <span className={"priority-label " + p.priority}>
+                                  {t(p.priority)}
+                                </span>
+                              </td>
+                              <td aria-label={progress(p) + "%"}>
+                                <div className="table-progress">
+                                  <strong>{progress(p)}%</strong>
+                                  <div className="progress-track">
+                                    <span
+                                      style={{ width: progress(p) + "%", background: p.color }}
+                                    />
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </section>
+                  ) : (
+                    <div className="project-grid">
+                      {filtered.map((p) => (
+                        <button
+                          className="project-card"
+                          key={p.id}
+                          onClick={() => {
+                            setSelected(p.id);
+                            setTaskTitle("");
+                          }}
+                        >
+                          <div className="card-top">
                             <span
-                              className="avatar small"
+                              className="project-icon"
                               style={{
-                                background: p.color + "20",
                                 color: p.color,
+                                background: p.color + "18",
                               }}
                             >
-                              {p.owner
-                                ? p.owner
-                                    .split(" ")
-                                    .map((n) => n[0])
-                                    .slice(0, 2)
-                                    .join("")
-                                : "?"}
+                              <FolderKanban size={23} />
                             </span>
-                            <span>{p.owner || t("unassigned")}</span>
-                          </span>
-                          <span className="date">
-                            <CalendarDays size={13} />
-                            {date(p.due)}
-                          </span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                            <span className={"status " + p.status}>
+                              <i />
+                              {t(p.status)}
+                            </span>
+                            <ArrowUpRight className="card-arrow" size={17} />
+                          </div>
+                          <h3>{p.name}</h3>
+                          <p className="description">{p.description || "—"}</p>
+                          <div className="progress-heading">
+                            <span>{t("progress")}</span>
+                            <strong>{progress(p)}%</strong>
+                          </div>
+                          <div className="progress-track">
+                            <span
+                              style={{
+                                width: progress(p) + "%",
+                                background: p.color,
+                              }}
+                            />
+                          </div>
+                          <div className="card-task-count">
+                            <ListTodo size={13} />
+                            {t("taskCount", {
+                              done: p.tasks.filter((task) => task.done).length,
+                              total: p.tasks.length,
+                            })}
+                          </div>
+                          <div className="card-footer">
+                            <span className="owner">
+                              <span
+                                className="avatar small"
+                                style={{
+                                  background: p.color + "20",
+                                  color: p.color,
+                                }}
+                              >
+                                {p.owner
+                                  ? p.owner
+                                      .split(" ")
+                                      .map((n) => n[0])
+                                      .slice(0, 2)
+                                      .join("")
+                                  : "?"}
+                              </span>
+                              <span>{p.owner || t("unassigned")}</span>
+                            </span>
+                            <span className="date">
+                              <CalendarDays size={13} />
+                              {date(p.due)}
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {filtered.length === 0 && (
                     <div className="empty">
                       <FolderKanban size={38} />

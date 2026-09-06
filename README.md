@@ -23,7 +23,7 @@ DB_PATH=data/my-workspace.sqlite SEED_DEMO=false npm run dev
 
 - Create, edit, and delete projects with owner, description, due date, priority, status, and accent color.
 - Add, rename, complete, reopen, and delete tasks. Progress is the percentage of completed tasks; project status is independently managed.
-- Workspace summaries, project grid/list views, search, status filters, name/date sorting, and a cross-project task view.
+- Workspace summaries, project grid/list views, search, status filters, and a cross-project task view. List view has clickable column headers for name, status, owner, due date, priority, and progress; click again to reverse direction. Projects without a due date remain last in either direction. Sorting is shared with grid view.
 - English and Simplified Chinese UI, localized dates, and device-persistent language preferences. User-entered content is preserved in its original language.
 - Light, dark, and live system theme support with device-persistent preferences.
 - Responsive navigation, keyboard-accessible shadcn dialogs, deletion confirmation, loading/error/empty states.
